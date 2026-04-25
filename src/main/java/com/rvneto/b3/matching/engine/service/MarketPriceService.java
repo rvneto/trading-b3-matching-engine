@@ -1,9 +1,7 @@
 package com.rvneto.b3.matching.engine.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rvneto.b3.matching.engine.dto.MarketDataDTO;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -19,29 +17,29 @@ import static java.util.Objects.isNull;
 public class MarketPriceService {
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectMapper objectMapper;
     private static final String CACHE_KEY_PREFIX = "market:price:";
 
-    public MarketPriceService(@Qualifier("redisTemplate") RedisTemplate<String, Object> redisTemplate) {
+    public MarketPriceService(@Qualifier("redisTemplate") RedisTemplate<String, Object> redisTemplate,
+                               @Qualifier("objectMapper") ObjectMapper objectMapper) {
         this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public Optional<MarketDataDTO> getCurrentPrice(String ticker) {
 
         String key = CACHE_KEY_PREFIX + ticker.toUpperCase().trim();
 
-        log.info("Serializer de chave atual: {}", redisTemplate.getKeySerializer().getClass().getName());
-        log.info("Buscando chave: [{}]", key);
+        log.info("Looking up key: [{}]", key);
 
         Object data = redisTemplate.opsForValue().get(key);
 
         if (isNull(data)) {
-            log.warn("Preco para o ticker {} nao encontrado no Redis", ticker);
+            log.warn("Price for ticker {} not found in Redis", ticker);
             return Optional.empty();
         }
 
-        // Converte o objeto genérico do Redis para o nosso DTO
-        return Optional.of(new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .convertValue(data, MarketDataDTO.class));
+        // Converts the generic Redis object to our DTO
+        return Optional.of(objectMapper.convertValue(data, MarketDataDTO.class));
     }
 }

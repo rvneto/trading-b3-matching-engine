@@ -16,9 +16,13 @@ public class OrderConsumer {
 
     @RabbitListener(queues = "${app.rabbitmq.queue-in}")
     public void receiveOrder(OrderEventDTO event) {
-        log.info("Nova ordem recebida da corretora: ID {} | Ticker {} | Lado {}", event.getOrderId(), event.getTicker(), event.getSide());
-
-        // Encaminha para o motor de matching
-        matchingService.process(event);
+        log.info("New order received from broker: ID {} | Ticker {} | Side {}",
+                event.getOrderId(), event.getTicker(), event.getSide());
+        try {
+            matchingService.process(event);
+        } catch (Exception e) {
+            log.error("Failed to process order {}: {}", event.getOrderId(), e.getMessage(), e);
+            throw e;
+        }
     }
 }

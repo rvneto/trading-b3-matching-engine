@@ -18,7 +18,7 @@ public class OrderProducer {
     private String queueName;
 
     public void sendToBroker(OrderResponseEvent message) {
-        log.info("Enviando resposta da ordem {} para a fila do Broker: {}", message.getOrderId(), queueName);
+        log.info("Sending order response {} to broker queue: {}", message.getOrderId(), queueName);
         rabbitTemplate.convertAndSend(queueName, message);
     }
 

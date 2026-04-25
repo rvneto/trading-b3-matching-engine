@@ -9,8 +9,8 @@ import com.rvneto.b3.matching.engine.model.SideStatus;
 import com.rvneto.b3.matching.engine.repository.OrderExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 
@@ -24,23 +24,25 @@ public class MatchingService {
     private final OrderProducer orderProducer;
 
     public void process(OrderEventDTO order) {
-        log.info("Processando match para a ordem {}: {} {}", order.getOrderId(), order.getSide(), order.getTicker());
+        log.info("Processing match for order {}: {} {}", order.getOrderId(), order.getSide(), order.getTicker());
 
-        // 1. Busca o preço atual no Redis
+        // 1. Fetches the current price from Redis
         var marketDataOpt = marketPriceService.getCurrentPrice(order.getTicker());
 
         if (marketDataOpt.isEmpty()) {
-            log.warn("Match abortado: Ticker {} nao encontrado no cache.", order.getTicker());
+            log.warn("Match aborted: Ticker {} not found in cache.", order.getTicker());
+            OrderResponseEvent rejection = new OrderResponseEvent(order.getOrderId(), "REJECTED", BigDecimal.ZERO);
+            orderProducer.sendToBroker(rejection);
             return;
         }
 
         BigDecimal marketPrice = marketDataOpt.get().getRegularMarketPrice();
 
         if (isCanExecute(order, marketPrice)) {
-            log.info("MATCH SUCESSO: Ordem {} executada a R$ {}", order.getOrderId(), marketPrice);
+            log.info("MATCH SUCCESS: Order {} executed at R$ {}", order.getOrderId(), marketPrice);
             saveAndNotify(order, marketPrice, ExecutionStatus.FILLED);
         } else {
-            log.info("MATCH NEGADO: Preco da ordem (R$ {}) fora do valor de mercado (R$ {})", order.getPrice(), marketPrice);
+            log.info("MATCH REJECTED: Order price (R$ {}) outside market value (R$ {})", order.getPrice(), marketPrice);
             saveAndNotify(order, marketPrice, ExecutionStatus.REJECTED);
         }
     }
@@ -49,17 +51,18 @@ public class MatchingService {
         boolean canExecute = false;
 
         if (SideStatus.BUY.name().equalsIgnoreCase(order.getSide())) {
-            // Só executa a compra se o preço que o usuário aceita pagar (order.price) for maior ou igual ao preço atual de mercado.
+            // Only executes the buy if the price the user is willing to pay (order.price) is greater than or equal to the current market price.
             canExecute = order.getPrice().compareTo(marketPrice) >= 0;
         } else if (SideStatus.SELL.name().equalsIgnoreCase(order.getSide())) {
-            // Só executa a venda se o preço que o usuário quer receber (order.price) for menor ou igual ao preço atual de mercado.
+            // Only executes the sell if the price the user wants to receive (order.price) is less than or equal to the current market price.
             canExecute = order.getPrice().compareTo(marketPrice) <= 0;
         }
         return canExecute;
     }
 
+    @Transactional
     private void saveAndNotify(OrderEventDTO order, BigDecimal price, ExecutionStatus status) {
-        // 1. Persistência no PostgreSQL
+        // 1. Persistence in PostgreSQL
         OrderExecution execution = OrderExecution.builder()
                 .orderId(order.getOrderId())
                 .ticker(order.getTicker())
@@ -71,7 +74,7 @@ public class MatchingService {
 
         repository.save(execution);
 
-        // 2. Notificação para o Broker (Fila mq-b3-to-broker)
+        // 2. Notification to the Broker (Queue mq-b3-to-broker)
         OrderResponseEvent response = new OrderResponseEvent(order.getOrderId(), status.name(), price);
         orderProducer.sendToBroker(response);
     }

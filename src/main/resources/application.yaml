@@ -29,6 +29,8 @@ app:
     routing-key: "b3.matching.engine"
     queue-in: "mq-broker-to-b3"
     queue-out: "mq-b3-to-broker"
+    dlx: "dlx.broker.orders"
+    dlq: "dlq-broker-to-b3"
 
 server:
   port: 8091
