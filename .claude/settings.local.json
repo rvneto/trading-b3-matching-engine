@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(rtk git *)",
-      "Bash(rtk git commit -m 'fix: improve matching engine robustness and configuration *)"
+      "Bash(rtk git commit -m 'fix: improve matching engine robustness and configuration *)",
+      "PowerShell(Get-Content \"C:\\\\Developer\\\\Projetos\\\\trading\\\\trading-b3-matching-engine\\\\pom.xml\" | Select-String -Pattern \"<dependencies>\" -Context 0,50 | Select-Object -First 1 | ForEach-Object { $_.Line; $_.Context.PostContext })"
     ]
   }
 }

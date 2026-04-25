@@ -16,8 +16,7 @@ public class OrderConsumer {
 
     @RabbitListener(queues = "${app.rabbitmq.queue-in}")
     public void receiveOrder(OrderEventDTO event) {
-        log.info("New order received from broker: ID {} | Ticker {} | Side {}",
-                event.getOrderId(), event.getTicker(), event.getSide());
+        log.info("New order received from broker: ID {} | Ticker {} | Side {}", event.getOrderId(), event.getTicker(), event.getSide());
         try {
             matchingService.process(event);
         } catch (Exception e) {
