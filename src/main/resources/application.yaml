@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: b3-matching-engine-api
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASS:admin_pass}
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/b3_core_db
+    username: ${DB_USER:b3_core_user}
+    password: ${DB_PASS:b3_core_password}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # Flyway cuidará da criação das tabelas
+    show-sql: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6381}
+
+app:
+  rabbitmq:
+    exchange: "exchange.broker.orders"
+    routing-key: "b3.matching.engine"
+    queue-in: "mq-broker-to-b3"
+    queue-out: "mq-b3-to-broker"
+
+server:
+  port: 8091
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
