@@ -1,55 +1,119 @@
 # 🏛️ B3 Matching Engine API
 
-O **Matching Engine** é o núcleo do ecossistema de simulação. Sua responsabilidade é atuar como a própria Bolsa de Valores (B3), recebendo ordens de compra e venda, validando-as contra preços reais de mercado e processando a execução.
+The **Matching Engine** is the core of the simulation ecosystem. It acts as the B3 stock exchange itself, receiving buy and sell orders, validating them against real market prices, and processing executions.
 
-## 🚀 Funcionalidades
-* **Matching de Ordens**: Executa ou rejeita ordens com base no preço real de mercado (via Redis).
-* **Baixa Latência**: Consulta de preços direta em cache (Redis) para decisões rápidas.
-* **Persistência Imutável**: Registro de todas as execuções em banco de dados PostgreSQL.
-* **Integração Assíncrona**: Comunicação via RabbitMQ com o Broker para feedback de status.
+> 📘 This service is part of a series of articles documenting the **My Broker B3** ecosystem.
+> Follow the full series on [dev.to/rvneto](https://dev.to/rvneto).
 
-## 🛠️ Stack Tecnológica
-* **Java 21** & **Spring Boot 3.3.5**
-* **Spring Data JPA** & **PostgreSQL**: Persistência de históricos e auditoria.
-* **Spring Data Redis**: Consumo de preços em tempo real injetados pela `market-sync-api`.
-* **Spring RabbitMQ**: Mensageria para recebimento de ordens e envio de confirmações.
-* **Flyway**: Gerenciamento de migrações de banco de dados.
+---
 
-## 📋 Arquitetura e Fluxo
-O serviço opera no centro do fluxo transacional:
-1. **Consumo**: Recebe uma ordem da fila `mq-broker-to-b3`.
-2. **Preço**: Busca o preço atual do ativo no Redis (prefixo `market:price:`).
-3. **Decisão**:
-    - **Compra**: Preço Ordem >= Preço Mercado? → `FILLED`
-    - **Venda**: Preço Ordem <= Preço Mercado? → `FILLED`
-    - Caso contrário → `REJECTED`
-4. **Persistência**: Grava o resultado na tabela `order_executions` (PostgreSQL).
-5. **Notificação**: Envia o resultado para a exchange `tp-b3-exchange` com destino ao Broker.
+## 🚀 Features
 
+- **Order Matching**: Executes or rejects orders based on real market prices fetched from Redis.
+- **Low Latency**: Direct cache lookup (Redis) for sub-millisecond price decisions.
+- **Immutable Persistence**: All executions are recorded in PostgreSQL for auditing.
+- **Asynchronous Integration**: Communicates with the Broker via RabbitMQ queues.
+- **Dead Letter Queue**: Failed messages are automatically routed to a DLQ for inspection.
+- **REST API**: Endpoints for querying execution history, documented via Swagger UI.
 
+---
 
-## 🔧 Configuração e Variáveis de Ambiente
-O serviço depende das seguintes variáveis para funcionar corretamente:
+## 🛠️ Tech Stack
 
-| Variável | Descrição | Exemplo |
+| Technology | Usage |
+| :--- | :--- |
+| **Java 21** + **Spring Boot 3.5.11** | Core framework |
+| **Spring Data JPA** + **PostgreSQL** | Execution persistence and audit |
+| **Spring Data Redis** | Real-time price cache lookup |
+| **Spring RabbitMQ** | Order intake and result notification |
+| **Flyway** | Database schema versioning |
+| **SpringDoc OpenAPI** | Swagger UI documentation |
+
+---
+
+## 📋 Architecture & Flow
+```
+[Broker] ──RabbitMQ──▶ [mq-broker-to-b3] ──▶ [Matching Engine]
+                                                       │
+                                           Redis: market:price:{TICKER}
+                                                       │
+                                          ┌────────────┴────────────┐
+                                        FILLED                   REJECTED
+                                          │                         │
+                                      PostgreSQL                 PostgreSQL
+                                          │                         │
+                                 [mq-b3-to-broker] ◀────────────────┘
+                                          │
+                                       [Broker]
+```
+
+**Matching Rules:**
+- **BUY**: order price >= market price → `FILLED`
+- **SELL**: order price <= market price → `FILLED`
+- Otherwise → `REJECTED`
+- **Ticker not found in Redis** → `REJECTED` and broker is notified
+- **Processing error** → message routed to `dlq-broker-to-b3`
+
+---
+
+## 🌐 REST API Endpoints
+
+Base URL: `http://localhost:8091/api/v1`
+
+| Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `DB_HOST` | Host do PostgreSQL (b3-core-db) | `localhost` |
-| `REDIS_HOST` | Host do Redis (market-cache) | `localhost` |
-| `RABBITMQ_HOST` | Host do RabbitMQ | `localhost` |
+| GET | `/executions` | List all executions |
+| GET | `/executions/order/{orderId}` | Find execution by broker order ID |
+| GET | `/executions/ticker/{ticker}` | List executions by stock ticker |
+| GET | `/executions/status/{status}` | List executions by status (FILLED, REJECTED, EXPIRED) |
 
-## 🗄️ Banco de Dados (PostgreSQL)
-A tabela `order_executions` possui constraints de integridade (`CHECK`) para garantir a consistência dos dados:
-- **Status**: Apenas `FILLED`, `REJECTED` ou `EXPIRED`.
-- **Side**: Apenas `BUY` ou `SELL`.
+📄 **Swagger UI**: [http://localhost:8091/swagger-ui.html](http://localhost:8091/swagger-ui.html)
+📄 **OpenAPI Spec**: [http://localhost:8091/api-docs](http://localhost:8091/api-docs)
 
-## 🐳 Rodando com Docker
+---
+
+## 🔧 Environment Variables
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `DB_HOST` | PostgreSQL host (b3-core-db) | `localhost` |
+| `DB_USER` | PostgreSQL username | `b3_core_user` |
+| `DB_PASS` | PostgreSQL password | `b3_core_password` |
+| `REDIS_HOST` | Redis host (b3-market-cache) | `localhost` |
+| `REDIS_PORT` | Redis port | `6381` |
+| `RABBITMQ_HOST` | RabbitMQ host | `localhost` |
+| `RABBITMQ_USER` | RabbitMQ username | `admin` |
+| `RABBITMQ_PASS` | RabbitMQ password | `admin_pass` |
+
+---
+
+## 🗄️ Database (PostgreSQL)
+
+Table `order_executions` with integrity constraints:
+- **status**: only `FILLED`, `REJECTED` or `EXPIRED`
+- **side**: only `BUY` or `SELL`
+- **execution_time**: auto-populated on insert
+
+---
+
+## 🐳 Running with Docker
+
 ```bash
 docker build -t b3-matching-engine-api .
 ```
 
-Certifique-se de que o container esteja na mesma rede (finance-network) que os serviços de infraestrutura.
+Make sure the container is on the same network as the infrastructure services:
+```bash
+docker run --network finance-network \
+  -e DB_HOST=b3-core-db \
+  -e REDIS_HOST=b3-market-cache \
+  -e RABBITMQ_HOST=rabbitmq \
+  b3-matching-engine-api
+```
 
 ## 🚦 Health Check
-O serviço utiliza o Spring Actuator para monitorar a saúde das conexões:
-- Endpoint: GET /actuator/health
-- Porta padrão: 8090
+
+Spring Actuator is enabled for health monitoring:
+
+- Endpoint: `GET /actuator/health`
+- Port: `8091`
