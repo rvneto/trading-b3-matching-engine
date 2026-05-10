@@ -26,13 +26,11 @@ public class MatchingService {
     public void process(OrderEventDTO order) {
         log.info("Processing match for order {}: {} {}", order.getOrderId(), order.getSide(), order.getTicker());
 
-        // 1. Fetches the current price from Redis
         var marketDataOpt = marketPriceService.getCurrentPrice(order.getTicker());
 
         if (marketDataOpt.isEmpty()) {
-            log.warn("Match aborted: Ticker {} not found in cache.", order.getTicker());
-            OrderResponseEvent rejection = new OrderResponseEvent(order.getOrderId(), "REJECTED", BigDecimal.ZERO);
-            orderProducer.sendToBroker(rejection);
+            log.warn("Match aborted: Ticker {} not found in cache. Persisting as REJECTED.", order.getTicker());
+            saveAndNotify(order, BigDecimal.ZERO, ExecutionStatus.REJECTED);
             return;
         }
 
@@ -51,10 +49,8 @@ public class MatchingService {
         boolean canExecute = false;
 
         if (SideStatus.BUY.name().equalsIgnoreCase(order.getSide())) {
-            // Only executes the buy if the price the user is willing to pay (order.price) is greater than or equal to the current market price.
             canExecute = order.getPrice().compareTo(marketPrice) >= 0;
         } else if (SideStatus.SELL.name().equalsIgnoreCase(order.getSide())) {
-            // Only executes the sell if the price the user wants to receive (order.price) is less than or equal to the current market price.
             canExecute = order.getPrice().compareTo(marketPrice) <= 0;
         }
         return canExecute;
@@ -62,7 +58,6 @@ public class MatchingService {
 
     @Transactional
     private void saveAndNotify(OrderEventDTO order, BigDecimal price, ExecutionStatus status) {
-        // 1. Persistence in PostgreSQL
         OrderExecution execution = OrderExecution.builder()
                 .orderId(order.getOrderId())
                 .ticker(order.getTicker())
@@ -74,7 +69,6 @@ public class MatchingService {
 
         repository.save(execution);
 
-        // 2. Notification to the Broker (Queue mq-b3-to-broker)
         OrderResponseEvent response = new OrderResponseEvent(order.getOrderId(), status.name(), price);
         orderProducer.sendToBroker(response);
     }
