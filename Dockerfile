@@ -1,6 +1,11 @@
-FROM eclipse-temurin:21-jdk-alpine
+﻿FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /app
-COPY target/*.jar app.jar
-# Instalação do curl para o healthcheck do Docker
-RUN apk add --no-cache curl
+COPY pom.xml .
+COPY src ./src
+RUN apk add --no-cache maven && mvn clean package -DskipTests -q
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8091
 ENTRYPOINT ["java", "-jar", "app.jar"]
